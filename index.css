@@ -1,0 +1,7 @@
+
+/* Ensure the main area is centered when in full screen */
+@media (min-width: 1536px) {
+  .max-w-7xl {
+    max-width: 1536px !important;
+  }
+}
