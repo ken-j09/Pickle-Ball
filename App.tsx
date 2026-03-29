@@ -30,14 +30,7 @@ interface ActiveScorer {
   y: number;
   zIndex: number;
 }
-
-function App(){
-  useEffect(() => {
-   fetchData().then(data => console.log(data));
-  }, []);
-  return <div classmate="App">Hello Vite + API Key</div>;
-}
-  
+ 
 const App: React.FC = () => {
   const [isProjectorMode, setIsProjectorMode] = useState(window.location.hash === '#/projector');
   const [activeView, setActiveView] = useState<ViewType>(() => {
