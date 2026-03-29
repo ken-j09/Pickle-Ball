@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { fetchData } from './services/api';
 import { Team, Match, ViewType, TournamentType, StandingsEntry } from './types';
 import Sidebar from './components/Sidebar';
 import TeamsManager from './components/TeamsManager';
@@ -30,6 +31,13 @@ interface ActiveScorer {
   zIndex: number;
 }
 
+function App(){
+  useEffect(() => {
+   fetchData().then(data => console.log(data));
+  }, []);
+  return <div classmate="App">Hello Vite + API Key</div>;
+}
+  
 const App: React.FC = () => {
   const [isProjectorMode, setIsProjectorMode] = useState(window.location.hash === '#/projector');
   const [activeView, setActiveView] = useState<ViewType>(() => {
