@@ -66,6 +66,22 @@ const RulesViewer: React.FC = () => {
         { label: "Double Hits", text: "Hitting the ball more than once before it crosses the net ends the rally." },
         { label: "Post Contact", text: "The ball hitting the net post is out. However, if it hits the net and goes over (except on serve), it's live." }
       ]
+    },
+    {
+      id: "scoring",
+      number: "05",
+      title: "The Scoring",
+      subtitle: "Rally vs Side-Out",
+      icon: "fa-calculator",
+      colorClass: "border-indigo-500",
+      bgClass: "bg-indigo-500",
+      textClass: "text-indigo-600 dark:text-indigo-400",
+      items: [
+        { label: "Side-Out Scoring", text: "The traditional way to play. You only score points when your team is serving. If you win a rally as the receiving team, you win the right to serve (a side-out), but no point is awarded." },
+        { label: "Rally Scoring", text: "A faster-paced alternative. A point is awarded to the winner of every rally, regardless of who served. This keeps the game moving and is often used in professional leagues like the MLP." },
+        { label: "The Third Number", text: "In doubles side-out scoring, the score is called as three numbers: Server Score, Receiver Score, and Server Number (1 or 2). For example, '4-2-1' means the serving team has 4, the receiving team has 2, and it's the first server." },
+        { label: "Winning Condition", text: "Most games are played to 11 or 15, win by 2. In rally scoring, teams often 'freeze' at game point, meaning the final point must be won while serving." }
+      ]
     }
   ];
 
@@ -511,6 +527,59 @@ const RulesViewer: React.FC = () => {
                             It is a fault if any part of your foot touches the kitchen line or the kitchen zone while volleying a ball.
                           </p>
                        </div>
+                    </div>
+                  )}
+
+                  {chapter.id === 'scoring' && (
+                    <div className="bg-indigo-500/5 border border-indigo-500/20 p-8 rounded-[2.5rem] shadow-xl overflow-hidden ring-1 ring-slate-100 dark:ring-transparent">
+                      <div className="flex items-center gap-4 mb-8">
+                        <div className="w-10 h-10 rounded-xl bg-indigo-500 text-white flex items-center justify-center shrink-0 shadow-lg shadow-indigo-500/20">
+                          <i className="fa-solid fa-scale-balanced text-lg"></i>
+                        </div>
+                        <p className="text-[11px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">Scoring System Comparison</p>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="bg-white dark:bg-slate-800/50 p-6 rounded-3xl border border-slate-200 dark:border-slate-700">
+                          <h4 className="text-sm font-black text-slate-900 dark:text-white uppercase mb-4 flex items-center gap-2">
+                            <i className="fa-solid fa-server text-indigo-500"></i> Side-Out
+                          </h4>
+                          <ul className="space-y-3 text-xs font-bold text-slate-500 dark:text-slate-400">
+                            <li className="flex items-start gap-2">
+                              <i className="fa-solid fa-check text-emerald-500 mt-0.5"></i>
+                              <span>Points only on serve</span>
+                            </li>
+                            <li className="flex items-start gap-2">
+                              <i className="fa-solid fa-check text-emerald-500 mt-0.5"></i>
+                              <span>3-number score call (4-2-1)</span>
+                            </li>
+                            <li className="flex items-start gap-2">
+                              <i className="fa-solid fa-check text-emerald-500 mt-0.5"></i>
+                              <span>Traditional tournament standard</span>
+                            </li>
+                          </ul>
+                        </div>
+                        
+                        <div className="bg-white dark:bg-slate-800/50 p-6 rounded-3xl border border-slate-200 dark:border-slate-700">
+                          <h4 className="text-sm font-black text-slate-900 dark:text-white uppercase mb-4 flex items-center gap-2">
+                            <i className="fa-solid fa-bolt text-amber-500"></i> Rally
+                          </h4>
+                          <ul className="space-y-3 text-xs font-bold text-slate-500 dark:text-slate-400">
+                            <li className="flex items-start gap-2">
+                              <i className="fa-solid fa-check text-emerald-500 mt-0.5"></i>
+                              <span>Point on every rally</span>
+                            </li>
+                            <li className="flex items-start gap-2">
+                              <i className="fa-solid fa-check text-emerald-500 mt-0.5"></i>
+                              <span>2-number score call (4-2)</span>
+                            </li>
+                            <li className="flex items-start gap-2">
+                              <i className="fa-solid fa-check text-emerald-500 mt-0.5"></i>
+                              <span>Faster games, TV friendly</span>
+                            </li>
+                          </ul>
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>

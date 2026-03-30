@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { fetchData } from './services/api';
+
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Team, Match, ViewType, TournamentType, StandingsEntry } from './types';
 import Sidebar from './components/Sidebar';
 import TeamsManager from './components/TeamsManager';
@@ -12,14 +12,16 @@ import RulesViewer from './components/RulesViewer';
 import ConfirmationModal from './components/ConfirmationModal';
 import SideOutScorer from './components/SideOutScorer';
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
 const TEAM_COLORS = [
-  '#10b981', '#3b82f6', '#ef4444', '#f59e0b',
-  '#8b5cf6', '#ec4899', '#06b6d4', '#f97316',
+  '#10b981', // Emerald
+  '#3b82f6', // Blue
+  '#ef4444', // Red
+  '#f59e0b', // Amber
+  '#8b5cf6', // Violet
+  '#ec4899', // Pink
+  '#06b6d4', // Cyan
+  '#f97316', // Orange
 ];
-
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface ActiveScorer {
   matchId: string;
@@ -28,33 +30,23 @@ interface ActiveScorer {
   zIndex: number;
 }
 
-// ─── App ──────────────────────────────────────────────────────────────────────
-
 const App: React.FC = () => {
-
-  // ── Projector / hash mode ──────────────────────────────────────────────────
-  const [isProjectorMode, setIsProjectorMode] = useState(
-    window.location.hash === '#/projector'
-  );
-
-  // ── Persisted UI state ─────────────────────────────────────────────────────
-  // ViewType values must match Sidebar item ids:
-  // 'teams' | 'tournament' | 'live-scoring' | 'standings' | 'rules' | 'ai-insights'
+  const [isProjectorMode, setIsProjectorMode] = useState(window.location.hash === '#/projector');
   const [activeView, setActiveView] = useState<ViewType>(() => {
     const saved = localStorage.getItem('pickle_view');
     return (saved as ViewType) || 'teams';
   });
-
+  
   const [tournamentType, setTournamentType] = useState<TournamentType>(() => {
     const saved = localStorage.getItem('pickle_type');
-    return (saved as TournamentType) || 'single-round-robin';
+    return (saved as TournamentType) || 'round-robin';
   });
-
+  
   const [teams, setTeams] = useState<Team[]>(() => {
     const saved = localStorage.getItem('pickle_teams');
     return saved ? JSON.parse(saved) : [];
   });
-
+  
   const [matches, setMatches] = useState<Match[]>(() => {
     const saved = localStorage.getItem('pickle_matches');
     return saved ? JSON.parse(saved) : [];
@@ -65,51 +57,129 @@ const App: React.FC = () => {
     return saved ? JSON.parse(saved) : [];
   });
 
+  // Support for multiple simultaneous scoring windows
   const [scoringConsoles, setScoringConsoles] = useState<ActiveScorer[]>([]);
   const nextZIndex = useRef(200);
 
-  const [isDarkMode, setIsDarkMode] = useState(
-    () => localStorage.getItem('pickle_theme') === 'dark'
-  );
+  // Default to Light Mode (false) if no theme is saved in localStorage
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const saved = localStorage.getItem('pickle_theme');
+    return saved === 'dark';
+  });
 
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [isBracketResetModalOpen, setIsBracketResetModalOpen] = useState(false);
-
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(
-    () => localStorage.getItem('pickle_sidebar_collapsed') === 'true'
-  );
+  
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    const saved = localStorage.getItem('pickle_sidebar_collapsed');
+    return saved === 'true';
+  });
 
   const [lastDeletedTeam, setLastDeletedTeam] = useState<Team | null>(null);
   const undoTimerRef = useRef<number | null>(null);
 
-  // ── Wallet ─────────────────────────────────────────────────────────────────
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [walletError, setWalletError] = useState<string | null>(null);
-
-  // ── Network ────────────────────────────────────────────────────────────────
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
-
-  // ── Effects ───────────────────────────────────────────────────────────────
-
-  useEffect(() => {
-    fetchData().then(data => console.log('API data:', data)).catch(console.error);
-  }, []);
 
   useEffect(() => {
     const handleOnline = () => setIsOffline(false);
     const handleOffline = () => setIsOffline(true);
+
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
 
+  const connectWallet = async () => {
+    setWalletError(null);
+    if (typeof window !== 'undefined' && (window as any).ethereum) {
+      try {
+        // Check if we are in an iframe
+        if (window.self !== window.top) {
+          console.warn("MetaMask connection might be restricted in an iframe. If it fails, try opening the app in a new tab.");
+        }
+
+        const accounts = await (window as any).ethereum.request({ method: 'eth_requestAccounts' });
+        if (accounts.length > 0) {
+          setWalletAddress(accounts[0]);
+        }
+      } catch (err: any) {
+        console.error("MetaMask Connection Error:", err);
+        if (err.code === 4001) {
+          setWalletError("Connection rejected by user.");
+        } else if (err.code === -32002) {
+          setWalletError("Request already pending. Check MetaMask.");
+        } else {
+          setWalletError(`Failed to connect: ${err.message || "Unknown error"}`);
+        }
+      }
+    } else {
+      setWalletError("MetaMask not found. Please install the extension.");
+    }
+  };
+
   useEffect(() => {
-    if (isDarkMode) document.documentElement.classList.add('dark');
-    else document.documentElement.classList.remove('dark');
-    localStorage.setItem('pickle_theme', isDarkMode ? 'dark' : 'light');
+    if (typeof window !== 'undefined' && (window as any).ethereum) {
+      const handleAccountsChanged = (accounts: string[]) => {
+        if (accounts.length > 0) {
+          setWalletAddress(accounts[0]);
+        } else {
+          setWalletAddress(null);
+        }
+      };
+
+      const handleChainChanged = () => {
+        window.location.reload();
+      };
+
+      (window as any).ethereum.on('accountsChanged', handleAccountsChanged);
+      (window as any).ethereum.on('chainChanged', handleChainChanged);
+
+      // Check if already connected
+      (window as any).ethereum.request({ method: 'eth_accounts' })
+        .then(handleAccountsChanged)
+        .catch(console.error);
+
+      return () => {
+        (window as any).ethereum.removeListener('accountsChanged', handleAccountsChanged);
+        (window as any).ethereum.removeListener('chainChanged', handleChainChanged);
+      };
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'pickle_matches' && e.newValue) setMatches(JSON.parse(e.newValue));
+      if (e.key === 'pickle_teams' && e.newValue) setTeams(JSON.parse(e.newValue));
+      if (e.key === 'pickle_active_scorers' && e.newValue) setActiveScorerIds(JSON.parse(e.newValue));
+      if (e.key === 'pickle_theme' && e.newValue) setIsDarkMode(e.newValue === 'dark');
+    };
+
+    const handleHashChange = () => {
+      setIsProjectorMode(window.location.hash === '#/projector');
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('hashchange', handleHashChange);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('hashchange', handleHashChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('pickle_theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('pickle_theme', 'light');
+    }
   }, [isDarkMode]);
 
   useEffect(() => {
@@ -121,437 +191,326 @@ const App: React.FC = () => {
     localStorage.setItem('pickle_sidebar_collapsed', String(isSidebarCollapsed));
   }, [teams, matches, tournamentType, activeView, activeScorerIds, isProjectorMode, isSidebarCollapsed]);
 
-  useEffect(() => {
-    const onHashChange = () => setIsProjectorMode(window.location.hash === '#/projector');
-    window.addEventListener('hashchange', onHashChange);
-    return () => window.removeEventListener('hashchange', onHashChange);
-  }, []);
-
-  // ── Wallet ─────────────────────────────────────────────────────────────────
-
-  const connectWallet = async () => {
-    setWalletError(null);
-    if (typeof window !== 'undefined' && (window as any).ethereum) {
-      try {
-        const accounts = await (window as any).ethereum.request({ method: 'eth_requestAccounts' });
-        setWalletAddress(accounts[0] || null);
-      } catch (err: any) {
-        setWalletError(err.message || 'Failed to connect wallet.');
-      }
-    } else {
-      setWalletError('MetaMask not found.');
-    }
-  };
-
-  // ── Team handlers ──────────────────────────────────────────────────────────
-
-  const handleAddTeam = useCallback((name: string) => {
-    const newTeam: Team = {
-      id: crypto.randomUUID(),
-      name,
-      color: TEAM_COLORS[teams.length % TEAM_COLORS.length],
-      wins: 0,
-      losses: 0,
-      pointsFor: 0,
-      pointsAgainst: 0,
-      players: [],
-    };
-    setTeams(prev => [...prev, newTeam]);
-  }, [teams.length]);
-
-  const handleUpdateTeam = useCallback((updated: Team) => {
-    setTeams(prev => prev.map(t => (t.id === updated.id ? updated : t)));
-  }, []);
-
-  const handleDeleteTeam = useCallback((id: string) => {
-    const team = teams.find(t => t.id === id);
-    if (!team) return;
-    setTeams(prev => prev.filter(t => t.id !== id));
-    setLastDeletedTeam(team);
-    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
-    undoTimerRef.current = window.setTimeout(() => setLastDeletedTeam(null), 5000);
-  }, [teams]);
-
-  const handleUndoDelete = useCallback(() => {
-    if (lastDeletedTeam) {
-      setTeams(prev => [...prev, lastDeletedTeam]);
-      setLastDeletedTeam(null);
-      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
-    }
-  }, [lastDeletedTeam]);
-
-  // ── Match handlers ─────────────────────────────────────────────────────────
-
-  const handleUpdateMatch = useCallback((updated: Match) => {
-    setMatches(prev => prev.map(m => (m.id === updated.id ? updated : m)));
-
-    // Recompute team standings from all matches
-    setTeams(prevTeams => {
-      const teamMap = new Map(
-        prevTeams.map(t => [t.id, { ...t, wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0 }])
-      );
-      const allMatches = matches.map(m => (m.id === updated.id ? updated : m));
-      for (const match of allMatches) {
-        if (match.score1 == null || match.score2 == null || !match.isCompleted) continue;
-        const tA = teamMap.get(match.team1Id);
-        const tB = teamMap.get(match.team2Id);
-        if (!tA || !tB) continue;
-        tA.pointsFor += match.score1;
-        tA.pointsAgainst += match.score2;
-        tB.pointsFor += match.score2;
-        tB.pointsAgainst += match.score1;
-        if (match.score1 > match.score2) { tA.wins += 1; tB.losses += 1; }
-        else if (match.score2 > match.score1) { tB.wins += 1; tA.losses += 1; }
-      }
-      return Array.from(teamMap.values());
-    });
+  const tournamentProgress = useMemo(() => {
+    if (matches.length === 0) return 0;
+    const completed = matches.filter(m => m.isCompleted).length;
+    return Math.round((completed / matches.length) * 100);
   }, [matches]);
 
-  // ── Move match (for ScheduleManager) ──────────────────────────────────────
-
-  const handleMoveMatch = useCallback((matchId: string, direction: 'up' | 'down') => {
-    setMatches(prev => {
-      const match = prev.find(m => m.id === matchId);
-      if (!match) return prev;
-      const roundMatches = prev
-        .filter(m => m.round === match.round)
-        .sort((a, b) => (a.position || 0) - (b.position || 0));
-      const idx = roundMatches.findIndex(m => m.id === matchId);
-      const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
-      if (swapIdx < 0 || swapIdx >= roundMatches.length) return prev;
-      const swapped = [...roundMatches];
-      [swapped[idx], swapped[swapIdx]] = [swapped[swapIdx], swapped[idx]];
-      const updatedPositions = swapped.map((m, i) => ({ ...m, position: i }));
-      return prev.map(m => {
-        const updated = updatedPositions.find(u => u.id === m.id);
-        return updated ?? m;
-      });
+  const leaderboard = useMemo(() => {
+    const data: Record<string, StandingsEntry> = {};
+    teams.forEach(t => {
+      data[t.id] = { teamId: t.id, wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0, differential: 0 };
     });
-  }, []);
-
-  const handleReorderMatches = useCallback((round: number, reordered: Match[]) => {
-    setMatches(prev => {
-      const others = prev.filter(m => m.round !== round);
-      return [...others, ...reordered];
+    matches.filter(m => m.isCompleted).forEach(m => {
+      if (m.team1Id && m.team2Id && data[m.team1Id] && data[m.team2Id]) {
+        const s1 = m.score1 || 0;
+        const s2 = m.score2 || 0;
+        data[m.team1Id].pointsFor += s1;
+        data[m.team1Id].pointsAgainst += s2;
+        if (s1 > s2) data[m.team1Id].wins++; else if (s2 > s1) data[m.team1Id].losses++;
+        data[m.team2Id].pointsFor += s2;
+        data[m.team2Id].pointsAgainst += s1;
+        if (s2 > s1) data[m.team2Id].wins++; else if (s1 > s2) data[m.team2Id].losses++;
+      }
     });
-  }, []);
+    return Object.values(data)
+      .sort((a, b) => b.wins - a.wins || (b.pointsFor - b.pointsAgainst) - (a.pointsFor - a.pointsAgainst))
+      .slice(0, 3);
+  }, [teams, matches]);
 
-  // ── Bracket / schedule generation ─────────────────────────────────────────
+  const toggleLiveScorer = (id: string) => {
+    setActiveScorerIds(prev => 
+      prev.includes(id) ? prev.filter(mid => mid !== id) : [...prev, id]
+    );
+  };
 
-  const handleGenerate = useCallback((type: TournamentType) => {
-    setTournamentType(type);
-    const pool = [...teams].sort(() => Math.random() - 0.5);
-    if (pool.length < 2) return;
+  const handleUpdateMatch = (updatedMatch: Match) => {
+    const newMatches = matches.map(m => m.id === updatedMatch.id ? updatedMatch : m);
+    if (updatedMatch.isCompleted) {
+      if (updatedMatch.winnerId && updatedMatch.nextMatchId) {
+        const nextIdx = newMatches.findIndex(m => m.id === updatedMatch.nextMatchId);
+        if (nextIdx !== -1) {
+          const nextMatch = { ...newMatches[nextIdx] };
+          if (updatedMatch.bracketType === 'finals') {
+             if (updatedMatch.id.includes('-W-')) nextMatch.team1Id = updatedMatch.winnerId;
+             else nextMatch.team2Id = updatedMatch.winnerId;
+          } else {
+             if ((updatedMatch.position || 0) % 2 === 0) nextMatch.team1Id = updatedMatch.winnerId;
+             else nextMatch.team2Id = updatedMatch.winnerId;
+          }
+          newMatches[nextIdx] = nextMatch;
+        }
+      }
+      const loserId = updatedMatch.team1Id === updatedMatch.winnerId ? updatedMatch.team2Id : updatedMatch.team1Id;
+      if (loserId && updatedMatch.nextLoserMatchId) {
+        const nextLoserIdx = newMatches.findIndex(m => m.id === updatedMatch.nextLoserMatchId);
+        if (nextLoserIdx !== -1) {
+          const nextMatch = { ...newMatches[nextLoserIdx] };
+          if (!nextMatch.team1Id) nextMatch.team1Id = loserId;
+          else if (!nextMatch.team2Id) nextMatch.team2Id = loserId;
+          newMatches[nextLoserIdx] = nextMatch;
+        }
+      }
+    }
+    setMatches(newMatches);
+  };
 
+  const handleOpenScorer = (matchId: string) => {
+    if (scoringConsoles.some(c => c.matchId === matchId)) return;
+    
+    // Staggered positioning logic
+    const offset = scoringConsoles.length * 30;
+    const isMobile = window.innerWidth < 1024;
+    const initialX = isMobile ? 16 : window.innerWidth - 450 - offset;
+    const initialY = isMobile ? window.innerHeight - 560 - offset : 100 + offset;
+
+    setScoringConsoles(prev => [...prev, {
+      matchId,
+      x: initialX,
+      y: initialY,
+      zIndex: nextZIndex.current++
+    }]);
+  };
+
+  const handleCloseScorer = (matchId: string) => {
+    setScoringConsoles(prev => prev.filter(c => c.matchId !== matchId));
+  };
+
+  const handleFocusScorer = (matchId: string) => {
+    setScoringConsoles(prev => prev.map(c => 
+      c.matchId === matchId ? { ...c, zIndex: nextZIndex.current++ } : c
+    ));
+  };
+
+  const handleUpdateScorerPos = (matchId: string, x: number, y: number) => {
+    setScoringConsoles(prev => prev.map(c => 
+      c.matchId === matchId ? { ...c, x, y } : c
+    ));
+  };
+
+  const generateRoundRobin = (legs: number = 1) => {
+    if (teams.length < 2) return;
     const newMatches: Match[] = [];
-
-    if (type === 'single-round-robin') {
-      for (let i = 0; i < pool.length; i++) {
-        for (let j = i + 1; j < pool.length; j++) {
+    const teamIds = teams.map(t => t.id);
+    let idCounter = 1;
+    for (let l = 1; l <= legs; l++) {
+      for (let i = 0; i < teamIds.length; i++) {
+        for (let j = i + 1; j < teamIds.length; j++) {
           newMatches.push({
-            id: crypto.randomUUID(),
-            team1Id: pool[i].id,
-            team2Id: pool[j].id,
-            score1: null,
-            score2: null,
-            round: 0,
-            position: newMatches.length,
-            bracketType: 'winners',
-            court: `Court ${newMatches.length + 1}`,
-            isCompleted: false,
-            winnerId: null,
+            id: `rr-${l}-${idCounter++}`, round: l, leg: l as 1 | 2,
+            team1Id: teamIds[i], team2Id: teamIds[j], score1: null, score2: null,
+            winnerId: null, isCompleted: false
           });
         }
       }
-    } else if (type === 'round-robin') {
-      // Double round robin — play each pair twice
-      for (let pass = 0; pass < 2; pass++) {
-        for (let i = 0; i < pool.length; i++) {
-          for (let j = i + 1; j < pool.length; j++) {
-            newMatches.push({
-              id: crypto.randomUUID(),
-              team1Id: pass === 0 ? pool[i].id : pool[j].id,
-              team2Id: pass === 0 ? pool[j].id : pool[i].id,
-              score1: null,
-              score2: null,
-              round: pass,
-              position: newMatches.length,
-              bracketType: 'winners',
-              court: `Court ${(newMatches.length % 4) + 1}`,
-              isCompleted: false,
-              winnerId: null,
-            });
-          }
+    }
+    setMatches(newMatches);
+  };
+
+  const generateBracket = (isDoubleElim: boolean) => {
+    const numTeams = teams.length;
+    if (numTeams < 2) return;
+    const size = Math.pow(2, Math.ceil(Math.log2(numTeams)));
+    const newMatches: Match[] = [];
+    const sortedTeams = [...teams].sort((a, b) => (a.rank || 99) - (b.rank || 99));
+
+    if (!isDoubleElim) {
+      const roundsCount = Math.log2(size);
+      for (let r = 0; r < roundsCount; r++) {
+        const matchesInRound = Math.pow(2, roundsCount - r - 1);
+        for (let i = 0; i < matchesInRound; i++) {
+          newMatches.push({
+            id: `S-R${r}-M${i}`, round: r, position: i, bracketType: 'winners',
+            team1Id: r === 0 ? (sortedTeams[i] ? sortedTeams[i].id : null) : null,
+            team2Id: r === 0 ? (sortedTeams[size - 1 - i] ? sortedTeams[size - 1 - i].id : null) : null,
+            score1: null, score2: null, winnerId: null, isCompleted: false,
+            nextMatchId: r === roundsCount - 1 ? null : `S-R${r + 1}-M${Math.floor(i / 2)}`
+          });
         }
       }
     } else {
-      // Single / double elimination
-      for (let i = 0; i + 1 < pool.length; i += 2) {
-        newMatches.push({
-          id: crypto.randomUUID(),
-          team1Id: pool[i].id,
-          team2Id: pool[i + 1].id,
-          score1: null,
-          score2: null,
-          round: 0,
-          position: Math.floor(i / 2),
-          bracketType: 'winners',
-          court: `Court ${Math.floor(i / 2) + 1}`,
-          isCompleted: false,
-          winnerId: null,
-        });
+      const roundsCount = Math.log2(size);
+      for (let r = 0; r < roundsCount; r++) {
+        const matchesInRound = Math.pow(2, roundsCount - r - 1);
+        for (let i = 0; i < matchesInRound; i++) {
+          newMatches.push({
+            id: `W-R${r}-M${i}`, round: r, position: i, bracketType: 'winners',
+            team1Id: r === 0 ? (sortedTeams[i*2]?.id || null) : null,
+            team2Id: r === 0 ? (sortedTeams[i*2+1]?.id || null) : null,
+            score1: null, score2: null, winnerId: null, isCompleted: false,
+            nextMatchId: `W-R${r + 1}-M${Math.floor(i / 2)}`,
+            nextLoserMatchId: `L-R${r}-M${i}`
+          });
+        }
       }
+      newMatches.push({
+        id: `F-R${roundsCount}-M0`, round: roundsCount, position: 0, bracketType: 'finals',
+        team1Id: null, team2Id: null, score1: null, score2: null, winnerId: null, isCompleted: false
+      });
     }
-
     setMatches(newMatches);
-    setTeams(prev => prev.map(t => ({ ...t, wins: 0, losses: 0, pointsFor: 0, pointsAgainst: 0 })));
-    setActiveView('tournament');
-  }, [teams]);
+  };
 
-  const handleResetTournament = useCallback(() => {
-    setMatches([]);
-    setActiveScorerIds([]);
-    setScoringConsoles([]);
-    setIsBracketResetModalOpen(false);
-  }, []);
+  const handleGenerateMatches = (type: TournamentType) => {
+    setTournamentType(type);
+    if (type === 'round-robin') generateRoundRobin(2);
+    else if (type === 'single-round-robin') generateRoundRobin(1);
+    else generateBracket(type === 'double-elimination');
+  };
 
-  const handleResetAll = useCallback(() => {
+  const handleLaunchAudience = () => {
+    const url = window.location.origin + window.location.pathname + '#/projector';
+    window.open(url, '_blank');
+  };
+
+  const handleResetEverything = () => {
     setTeams([]);
     setMatches([]);
     setActiveScorerIds([]);
     setScoringConsoles([]);
-    setLastDeletedTeam(null);
+    setTournamentType('round-robin');
+    setActiveView('teams');
     setIsResetModalOpen(false);
-  }, []);
+    setLastDeletedTeam(null);
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+  };
 
-  // ── Live scoring handlers ──────────────────────────────────────────────────
+  const handleResetTournament = () => {
+    setMatches([]);
+    setActiveScorerIds([]);
+    setScoringConsoles([]);
+    setIsBracketResetModalOpen(false);
+  };
 
-  const handleToggleLive = useCallback((matchId: string) => {
-    setActiveScorerIds(prev =>
-      prev.includes(matchId) ? prev.filter(id => id !== matchId) : [...prev, matchId]
+  const renderHeaderActions = () => {
+    const hasData = teams.length > 0 || matches.length > 0;
+    
+    return (
+      <div className="relative z-30 pointer-events-auto flex flex-wrap lg:flex-nowrap items-center gap-3 md:gap-4 mt-4 lg:mt-0">
+        {activeView === 'tournament' && matches.length > 0 && (
+          <button onClick={() => setIsBracketResetModalOpen(true)} className="flex items-center gap-2 px-4 py-3 min-h-[44px] text-xs font-bold text-blue-600 dark:text-blue-400 bg-white dark:bg-blue-900/20 hover:bg-blue-600 hover:text-white dark:hover:bg-blue-500 rounded-xl transition-all border border-slate-200 dark:border-blue-900/50 shadow-sm"><i className="fa-solid fa-rotate-left"></i> Reset Match Flow</button>
+        )}
+        {activeView === 'live-scoring' && activeScorerIds.length > 0 && (
+          <button onClick={() => setActiveScorerIds([])} className="flex items-center gap-2 px-4 py-3 min-h-[44px] text-xs font-bold text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800 hover:bg-blue-900 dark:hover:bg-slate-700 hover:text-white rounded-xl transition-all border border-slate-200 dark:border-slate-700 shadow-sm"><i className="fa-solid fa-rectangle-xmark"></i> Clear All Courts</button>
+        )}
+
+        {/* Theme Toggle - Positioned next to Global Reset for Mobile/Tablet accessibility */}
+        <button 
+          onClick={() => setIsDarkMode(!isDarkMode)}
+          className="md:hidden flex items-center justify-center w-[44px] h-[44px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl transition-all shadow-sm active:scale-95"
+          title="Toggle Theme"
+        >
+          <i className={`fa-solid ${isDarkMode ? 'fa-sun text-amber-500' : 'fa-moon text-indigo-500'}`}></i>
+        </button>
+
+        {hasData && (
+          <button onClick={() => setIsResetModalOpen(true)} className="flex items-center gap-2 px-5 md:px-6 py-3 min-h-[44px] text-xs font-bold text-white bg-red-600 hover:bg-red-700 shadow-lg shadow-red-500/20 rounded-xl transition-all active:scale-95"><i className="fa-solid fa-fire-flame-curved"></i> Global Reset</button>
+        )}
+      </div>
     );
-  }, []);
-
-  const handleScoreMatch = useCallback((matchId: string) => {
-    setScoringConsoles(prev => {
-      if (prev.find(c => c.matchId === matchId)) return prev;
-      const z = nextZIndex.current++;
-      return [...prev, { matchId, x: 80 + prev.length * 30, y: 80 + prev.length * 30, zIndex: z }];
-    });
-  }, []);
-
-  const handleCloseScorer = useCallback((matchId: string) => {
-    setScoringConsoles(prev => prev.filter(c => c.matchId !== matchId));
-  }, []);
-
-  const handleRemoveMatch = useCallback((matchId: string) => {
-    setActiveScorerIds(prev => prev.filter(id => id !== matchId));
-    setScoringConsoles(prev => prev.filter(c => c.matchId !== matchId));
-  }, []);
-
-  const handleFocusConsole = useCallback((matchId: string) => {
-    const z = nextZIndex.current++;
-    setScoringConsoles(prev =>
-      prev.map(c => (c.matchId === matchId ? { ...c, zIndex: z } : c))
-    );
-  }, []);
-
-  const handleMoveConsole = useCallback((matchId: string, x: number, y: number) => {
-    setScoringConsoles(prev =>
-      prev.map(c => (c.matchId === matchId ? { ...c, x, y } : c))
-    );
-  }, []);
-
-  const handleLaunchAudience = useCallback(() => {
-    window.location.hash = '#/projector';
-    setIsProjectorMode(true);
-  }, []);
-
-  // ── Derived data ───────────────────────────────────────────────────────────
-
-  // Leaderboard uses teamId to match Sidebar's entry.teamId usage
-  const leaderboard: StandingsEntry[] = useMemo(() => {
-    return [...teams]
-      .map(t => ({
-        teamId: t.id,
-        wins: t.wins,
-        losses: t.losses,
-        pointsFor: t.pointsFor,
-        pointsAgainst: t.pointsAgainst,
-        differential: t.pointsFor - t.pointsAgainst,
-      }))
-      .sort((a, b) => b.wins - a.wins || b.differential - a.differential);
-  }, [teams]);
-
-  const activeMatches = useMemo(
-    () => matches.filter(m => activeScorerIds.includes(m.id)),
-    [matches, activeScorerIds]
-  );
-
-  // ── Projector mode ─────────────────────────────────────────────────────────
+  };
 
   if (isProjectorMode) {
     return (
-      <AudienceView
-        activeMatches={activeMatches}
+      <AudienceView 
+        activeMatches={matches.filter(m => activeScorerIds.includes(m.id))}
         teams={teams}
-        onClose={() => {
-          window.location.hash = '';
-          setIsProjectorMode(false);
-        }}
+        onClose={() => { window.location.hash = ''; setIsProjectorMode(false); }}
       />
     );
   }
 
-  // ── View router ────────────────────────────────────────────────────────────
-
-  const renderView = () => {
-    switch (activeView) {
-      case 'teams':
-        return (
-          <TeamsManager
-            teams={teams}
-            onAddTeam={handleAddTeam}
-            onUpdateTeam={handleUpdateTeam}
-            onDeleteTeam={handleDeleteTeam}
-            onUndoDelete={handleUndoDelete}
-            lastDeletedTeam={lastDeletedTeam}
-            teamColors={TEAM_COLORS}
-          />
-        );
-
-      case 'tournament':
-        return (
-          <TournamentDirector
-            teams={teams}
-            matches={matches}
-            type={tournamentType}
-            onUpdateMatch={handleUpdateMatch}
-            onMoveMatch={handleMoveMatch}
-            onReorderMatches={handleReorderMatches}
-            onGenerate={handleGenerate}
-            activeScorerIds={activeScorerIds}
-            onToggleLive={handleToggleLive}
-            onResetTournament={() => setIsBracketResetModalOpen(true)}
-            isDarkMode={isDarkMode}
-            onScoreMatch={handleScoreMatch}
-          />
-        );
-
-      case 'live-scoring':
-        return (
-          <LiveScoring
-            activeMatches={activeMatches}
-            teams={teams}
-            onUpdateMatch={handleUpdateMatch}
-            onRemoveMatch={handleRemoveMatch}
-            onGoToTournament={() => setActiveView('tournament')}
-            onScoreMatch={handleScoreMatch}
-            onLaunchAudience={handleLaunchAudience}
-          />
-        );
-
-      case 'standings':
-        return (
-          <StandingsTable
-            teams={teams}
-            matches={matches}
-          />
-        );
-
-      case 'rules':
-        return <RulesViewer />;
-
-      case 'ai-insights':
-        return (
-          <AIInsights
-            teams={teams}
-            matches={matches}
-          />
-        );
-
-      default:
-        return null;
-    }
-  };
-
-  // ── Main render ────────────────────────────────────────────────────────────
-
   return (
-    <div className="flex flex-col md:flex-row min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300 overflow-hidden">
-
-      <Sidebar
-        activeView={activeView}
-        onViewChange={setActiveView}
-        leaderboard={leaderboard}
-        teams={teams}
-        activeScorerCount={activeScorerIds.length}
-        onResetAll={() => setIsResetModalOpen(true)}
-        isDarkMode={isDarkMode}
-        onToggleTheme={() => setIsDarkMode(d => !d)}
-        walletAddress={walletAddress}
-        onConnectWallet={connectWallet}
-        walletError={walletError}
-        isCollapsed={isSidebarCollapsed}
-        onToggleCollapse={() => setIsSidebarCollapsed(c => !c)}
+    <div className="flex flex-col md:flex-row min-h-screen bg-slate-50/50 dark:bg-slate-950 transition-colors duration-300 overflow-hidden">
+      <Sidebar 
+        activeView={activeView} onViewChange={setActiveView} leaderboard={leaderboard}
+        teams={teams} activeScorerCount={activeScorerIds.length} onResetAll={() => setIsResetModalOpen(true)}
+        isDarkMode={isDarkMode} onToggleTheme={() => setIsDarkMode(!isDarkMode)}
+        walletAddress={walletAddress} onConnectWallet={connectWallet} walletError={walletError}
+        isCollapsed={isSidebarCollapsed} onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
       />
-
-      <main className="flex-1 p-5 md:p-10 overflow-y-auto overflow-x-hidden pb-32 md:pb-20 relative">
-
-        {isOffline && (
-          <div className="mb-4 px-4 py-2 rounded-lg bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 text-sm font-medium flex items-center gap-2">
-            <span>⚠️</span> You are offline. Some features may be unavailable.
+      
+      {isOffline && (
+        <div className="fixed bottom-24 md:bottom-8 right-8 z-[1000] animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="bg-amber-500 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 font-bold text-sm">
+            <i className="fas fa-wifi-slash"></i>
+            <span>Offline Mode Enabled</span>
           </div>
-        )}
+        </div>
+      )}
+      
+      <main className="flex-1 p-5 md:p-10 overflow-y-auto overflow-x-hidden pb-32 md:pb-20 relative">
+        <header className="mb-10 flex flex-col lg:flex-row lg:items-center justify-between gap-4 lg:gap-8">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center flex-wrap gap-3 mb-3">
+               <h1 className="text-2xl md:text-4xl font-black text-blue-950 dark:text-white tracking-tight truncate uppercase">
+                Tournament <span className="text-emerald-500">Center</span>
+              </h1>
+              {matches.length > 0 && (
+                <div className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 px-3 py-1 rounded-full text-[10px] md:text-xs font-bold flex items-center gap-2 shrink-0 border border-emerald-200 dark:border-emerald-800">
+                  <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></div>
+                  {tournamentProgress}% Complete
+                </div>
+              )}
+            </div>
+            <div className="w-full bg-slate-200 dark:bg-slate-800 h-2 rounded-full overflow-hidden max-w-md border border-slate-300/50 dark:border-slate-800">
+              <div 
+                className="bg-emerald-500 h-full transition-all duration-1000 ease-out shadow-[0_0_10px_rgba(16,185,129,0.5)]" 
+                style={{ width: `${tournamentProgress}%` }}
+              ></div>
+            </div>
+          </div>
+          
+          {renderHeaderActions()}
+        </header>
 
-        <h1 className="text-4xl font-bold text-blue-950 dark:text-white mb-8">
-          Tournament Center
-        </h1>
+        <div className="max-w-7xl mx-auto">
+          {activeView === 'teams' && <TeamsManager teams={teams} onAddTeam={(n, p, r, c) => setTeams([...teams, {id: crypto.randomUUID(), name: n, players: p, rank: r, color: c || TEAM_COLORS[teams.length % TEAM_COLORS.length]}])} onDeleteTeam={id => setTeams(teams.filter(t => t.id !== id))} onUpdateTeam={ut => setTeams(teams.map(t => t.id === ut.id ? ut : t))} onReset={() => setIsResetModalOpen(true)} teamColors={TEAM_COLORS} />}
+          {activeView === 'tournament' && <TournamentDirector teams={teams} matches={matches} type={tournamentType} onUpdateMatch={handleUpdateMatch} onMoveMatch={(id, dir) => {}} onReorderMatches={(r, m) => {}} onGenerate={handleGenerateMatches} activeScorerIds={activeScorerIds} onToggleLive={toggleLiveScorer} onResetTournament={() => setIsBracketResetModalOpen(true)} isDarkMode={isDarkMode} onScoreMatch={handleOpenScorer} />}
+          {activeView === 'standings' && <StandingsTable teams={teams} matches={matches} />}
+          {activeView === 'ai-insights' && <AIInsights teams={teams} matches={matches} />}
+          {activeView === 'rules' && <RulesViewer />}
+          {activeView === 'live-scoring' && <LiveScoring activeMatches={matches.filter(m => activeScorerIds.includes(m.id))} teams={teams} onUpdateMatch={handleUpdateMatch} onRemoveMatch={toggleLiveScorer} onGoToTournament={() => setActiveView('tournament')} onScoreMatch={handleOpenScorer} onLaunchAudience={handleLaunchAudience} />}
+        </div>
 
-        {renderView()}
+        {/* Dynamic Multi-Window Scoring Consoles */}
+        {scoringConsoles.map(console => {
+          const match = matches.find(m => m.id === console.matchId);
+          if (!match) return null;
+          return (
+            <SideOutScorer 
+              key={console.matchId}
+              match={match}
+              teams={teams}
+              onUpdate={handleUpdateMatch}
+              onClose={() => handleCloseScorer(console.matchId)}
+              floating
+              x={console.x}
+              y={console.y}
+              zIndex={console.zIndex}
+              onPositionChange={(x, y) => handleUpdateScorerPos(console.matchId, x, y)}
+              onFocus={() => handleFocusScorer(console.matchId)}
+            />
+          );
+        })}
       </main>
 
-      {/* Floating SideOutScorer consoles */}
-      {scoringConsoles.map(sc => {
-        const match = matches.find(m => m.id === sc.matchId);
-        if (!match) return null;
-        return (
-          <SideOutScorer
-            key={sc.matchId}
-            match={match}
-            teams={teams}
-            x={sc.x}
-            y={sc.y}
-            zIndex={sc.zIndex}
-            floating
-            onUpdate={handleUpdateMatch}
-            onClose={() => handleCloseScorer(sc.matchId)}
-            onFocus={() => handleFocusConsole(sc.matchId)}
-            onPositionChange={(x, y) => handleMoveConsole(sc.matchId, x, y)}
-          />
-        );
-      })}
+      {lastDeletedTeam && (
+        <div className="fixed bottom-28 md:bottom-8 left-1/2 -translate-x-1/2 z-[300] w-[calc(100%-2rem)] max-w-sm animate-in slide-in-from-bottom-8 duration-500">
+           <div className="bg-blue-950 dark:bg-slate-900 border border-blue-900 dark:border-slate-800 rounded-3xl p-5 shadow-2xl flex items-center justify-between gap-4 overflow-hidden relative">
+              <div className="flex items-center gap-4">
+                 <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white" style={{ backgroundColor: lastDeletedTeam.color }}><i className="fa-solid fa-trash-can-arrow-up"></i></div>
+                 <div><h4 className="text-[10px] font-black uppercase text-blue-400 tracking-widest mb-0.5">Team Deleted</h4><p className="text-xs font-bold text-white truncate max-w-[120px]">{lastDeletedTeam.name}</p></div>
+              </div>
+              <button onClick={() => { setTeams(p => [...p, lastDeletedTeam]); setLastDeletedTeam(null); }} className="bg-emerald-500 hover:bg-emerald-400 text-white text-[10px] font-black uppercase px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-emerald-500/20 active:scale-95 flex items-center gap-2"><i className="fa-solid fa-rotate-left"></i> Restore</button>
+              <div className="absolute bottom-0 left-0 h-1 bg-emerald-500 animate-shrink-width" style={{ animationDuration: '6s', animationTimingFunction: 'linear' }}></div>
+           </div>
+        </div>
+      )}
 
-      <ConfirmationModal
-        isOpen={isResetModalOpen}
-        title="Reset Everything?"
-        message="This will permanently delete all teams, matches, and scores. This action cannot be undone."
-        confirmLabel="Reset All"
-        onConfirm={handleResetAll}
-        onCancel={() => setIsResetModalOpen(false)}
-        variant="danger"
-      />
-
-      <ConfirmationModal
-        isOpen={isBracketResetModalOpen}
-        title="Reset Tournament?"
-        message="This will clear all matches and scores. Teams will remain. This action cannot be undone."
-        confirmLabel="Reset Tournament"
-        onConfirm={handleResetTournament}
-        onCancel={() => setIsBracketResetModalOpen(false)}
-        variant="warning"
-      />
-
+      <ConfirmationModal isOpen={isResetModalOpen} title="Destroy All Data?" message="This will wipe everything. It cannot be undone." confirmLabel="Wipe Data" onConfirm={handleResetEverything} onCancel={() => setIsResetModalOpen(false)} />
+      <ConfirmationModal isOpen={isBracketResetModalOpen} title="Reset Brackets?" message="Scores will be deleted, but team list remains." confirmLabel="Clear Matches" onConfirm={handleResetTournament} onCancel={() => setIsBracketResetModalOpen(false)} variant="warning" />
     </div>
   );
 };
